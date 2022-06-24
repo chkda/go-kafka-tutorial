@@ -20,7 +20,7 @@ func main() {
 	group := os.Args[2]
 	topics := os.Args[3:]
 
-	sigchan := make(chan os.Signal)
+	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
@@ -40,12 +40,16 @@ func main() {
 	fmt.Printf("Created Consumer %v\n", consumer)
 
 	err = consumer.SubscribeTopics(topics, nil)
-
-	for {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to subscribe to topics: %s\n", err)
+		os.Exit(1)
+	}
+	run := true
+	for run {
 		select {
 		case sig := <-sigchan:
-			fmt.Printf("Caught signal %v: terminating", sig)
-			break
+			fmt.Printf("Caught signal %v: terminating\n", sig)
+			run = false
 		default:
 			event := consumer.Poll(100)
 			if event == nil {
@@ -66,7 +70,7 @@ func main() {
 			case kafka.Error:
 				fmt.Fprintf(os.Stderr, "Error: %v: %v\n", msg.Code(), msg)
 				if msg.Code() == kafka.ErrAllBrokersDown {
-					break
+					run = false
 				}
 			default:
 				fmt.Printf("Ignored %v\n", msg)
